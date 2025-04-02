@@ -6,4 +6,5 @@
 *.fatbin
 *.vscode
 *.exe
-note.md
+*.exp
+*.lib
