@@ -2,7 +2,8 @@
 #include <vector>
 #include <random>
 #include <omp.h>
-
+// g++ -fopenmp .\Matrix_openmp.cpp -o .\Matrix_openmp.exe
+// .\Matrix_openmp.exe
 class Matrix {
 private:
     std::vector<double> data;

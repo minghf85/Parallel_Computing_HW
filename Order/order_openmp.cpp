@@ -5,6 +5,8 @@
 #include <random>
 #include <algorithm>
 #include <windows.h>
+// g++ -fopenmp .\order_openmp.cpp -o .\order_openmp.exe
+// .\order_openmp.exe
 void setUTF8Console() {
     SetConsoleOutputCP(CP_UTF8);
 }
