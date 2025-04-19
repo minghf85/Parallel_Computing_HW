@@ -178,72 +178,6 @@ void parallelMergeSort(std::vector<int>& arr, int left, int right) {
     }
 }
 
-// 串行基数排序
-void serialRadixSort(std::vector<int>& arr) {
-    int max = *std::max_element(arr.begin(), arr.end());
-    
-    for (int exp = 1; max/exp > 0; exp *= 10) {
-        std::vector<int> output(arr.size());
-        std::vector<int> count(10, 0);
-        
-        for (int i = 0; i < arr.size(); i++)
-            count[(arr[i]/exp)%10]++;
-        
-        for (int i = 1; i < 10; i++)
-            count[i] += count[i-1];
-        
-        for (int i = arr.size()-1; i >= 0; i--) {
-            output[count[(arr[i]/exp)%10]-1] = arr[i];
-            count[(arr[i]/exp)%10]--;
-        }
-        
-        arr = output;
-    }
-}
-
-// 并行基数排序
-void parallelRadixSort(std::vector<int>& arr) {
-    int max = *std::max_element(arr.begin(), arr.end());
-    
-    for (int exp = 1; max/exp > 0; exp *= 10) {
-        std::vector<int> output(arr.size());
-        std::vector<int> count(10, 0);
-        
-        // 并行计算每个数字出现的次数
-        #pragma omp parallel
-        {
-            std::vector<int> local_count(10, 0);
-            
-            #pragma omp for nowait
-            for (int i = 0; i < arr.size(); i++)
-                local_count[(arr[i]/exp)%10]++;
-            
-            #pragma omp critical
-            for (int i = 0; i < 10; i++)
-                count[i] += local_count[i];
-        }
-        
-        // 计算前缀和
-        for (int i = 1; i < 10; i++)
-            count[i] += count[i-1];
-        
-        // 并行构建输出数组
-        std::vector<int> pos(arr.size());
-        #pragma omp parallel for
-        for (int i = 0; i < arr.size(); i++) {
-            int digit = (arr[i]/exp)%10;
-            #pragma omp atomic capture
-            pos[i] = --count[digit];
-        }
-        
-        #pragma omp parallel for
-        for (int i = 0; i < arr.size(); i++)
-            output[pos[i]] = arr[i];
-        
-        arr = output;
-    }
-}
-
 // 串行冒泡排序
 void serialBubbleSort(std::vector<int>& arr) {
     for (int i = 0; i < arr.size()-1; i++) {
@@ -299,8 +233,6 @@ void performanceTest(int size) {
     std::vector<int> arr4 = arr;
     std::vector<int> arr5 = arr;
     std::vector<int> arr6 = arr;
-    std::vector<int> arr7 = arr;
-    std::vector<int> arr8 = arr;
     
     double start, end;
     
@@ -328,30 +260,18 @@ void performanceTest(int size) {
     end = omp_get_wtime();
     double parallelMergeTime = end - start;
     
-    // 测试串行基数排序
-    start = omp_get_wtime();
-    serialRadixSort(arr5);
-    end = omp_get_wtime();
-    double serialRadixTime = end - start;
-    
-    // 测试并行基数排序
-    start = omp_get_wtime();
-    parallelRadixSort(arr6);
-    end = omp_get_wtime();
-    double parallelRadixTime = end - start;
-    
     // 对于小规模数据才测试冒泡排序
     double serialBubbleTime = 0, parallelBubbleTime = 0;
     if (size <= 100000) {  // 只对小规模数据进行冒泡排序测试
         // 测试串行冒泡排序
         start = omp_get_wtime();
-        serialBubbleSort(arr7);
+        serialBubbleSort(arr5);
         end = omp_get_wtime();
         serialBubbleTime = end - start;
         
         // 测试并行冒泡排序
         start = omp_get_wtime();
-        parallelBubbleSort(arr8);
+        parallelBubbleSort(arr6);
         end = omp_get_wtime();
         parallelBubbleTime = end - start;
     }
@@ -359,7 +279,6 @@ void performanceTest(int size) {
     // 计算加速比和并行效率
     double quickSpeedup = serialQuickTime / parallelQuickTime;
     double mergeSpeedup = serialMergeTime / parallelMergeTime;
-    double radixSpeedup = serialRadixTime / parallelRadixTime;
     
     int num_threads;
     #pragma omp parallel
@@ -370,7 +289,6 @@ void performanceTest(int size) {
     
     double quickEfficiency = quickSpeedup / num_threads;
     double mergeEfficiency = mergeSpeedup / num_threads;
-    double radixEfficiency = radixSpeedup / num_threads;
     
     // 输出结果
     std::cout << "数组大小: " << size << std::endl;
@@ -388,18 +306,15 @@ void performanceTest(int size) {
     std::cout << "加速比: " << mergeSpeedup << std::endl;
     std::cout << "并行效率: " << mergeEfficiency << std::endl;
     
-    std::cout << "\n基数排序性能分析:" << std::endl;
-    std::cout << "串行时间: " << serialRadixTime << "秒" << std::endl;
-    std::cout << "并行时间: " << parallelRadixTime << "秒" << std::endl;
-    std::cout << "加速比: " << radixSpeedup << std::endl;
-    std::cout << "并行效率: " << radixEfficiency << std::endl;
-    
     if (size <= 100000) {
+        double bubbleSpeedup = serialBubbleTime / parallelBubbleTime;
+        double bubbleEfficiency = bubbleSpeedup / num_threads;
+        
         std::cout << "\n冒泡排序性能分析:" << std::endl;
         std::cout << "串行时间: " << serialBubbleTime << "秒" << std::endl;
         std::cout << "并行时间: " << parallelBubbleTime << "秒" << std::endl;
-        std::cout << "加速比: " << (serialBubbleTime / parallelBubbleTime) << std::endl;
-        std::cout << "并行效率: " << (radixSpeedup / num_threads) << std::endl;
+        std::cout << "加速比: " << bubbleSpeedup << std::endl;
+        std::cout << "并行效率: " << bubbleEfficiency << std::endl;
     }
 }
 
@@ -407,7 +322,7 @@ int main() {
     setUTF8Console();
     
     // 设置OpenMP线程数
-    omp_set_num_threads(6);
+    omp_set_num_threads(4);
     
     // 禁用动态线程调整
     omp_set_dynamic(0);
@@ -419,7 +334,7 @@ int main() {
     std::cout << "开始性能测试..." << std::endl << std::endl;
     performanceTest(10000);
     std::cout << "\n------------------------\n" << std::endl;
-    performanceTest(100000);
+    performanceTest(40000);
     std::cout << "\n------------------------\n" << std::endl;
     performanceTest(1000000);
     

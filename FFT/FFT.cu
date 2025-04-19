@@ -113,7 +113,7 @@ int main() {
     for (int i = 0; i < N; i++) {
         h_data[i] = Complex((float)rand()/RAND_MAX, (float)rand()/RAND_MAX);
     }
-
+    
     // 分配设备内存
     cudaMalloc(&d_data, N * sizeof(Complex));
     cudaMemcpy(d_data, h_data, N * sizeof(Complex), cudaMemcpyHostToDevice);
@@ -138,6 +138,7 @@ int main() {
     cudaEventSynchronize(stop);
     cudaEventElapsedTime(&elapsedTime, start, stop);
     printf("Serial FFT Time: %.3f ms\n", elapsedTime);
+
 
     // 计算加速比和效率
     float speedup = elapsedTime / 0.001f; // 防止除零
