@@ -8,3 +8,4 @@
 *.exe
 *.exp
 *.lib
+/FFT/fft
