@@ -6,7 +6,7 @@
 #include <device_launch_parameters.h>
 //nvcc FFT.cu -o fft
 #define PI 3.14159265358979323846
-#define N 8192  
+#define N 65536  
 #define THREADS_PER_BLOCK 256  // 每个线程块的线程数
 #define TEST_SIZE 16  // 用于验证的2的幂次数据点
 #define ERROR_THRESHOLD 1e-3  // 允许0.1%的相对误差

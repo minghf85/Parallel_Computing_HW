@@ -1,40 +1,8 @@
-# CUDA图像处理库实现报告
+#include "CuImage.h"
+#include <cuda_runtime.h>
+#include <opencv2/opencv.hpp>
+#include <iostream>
 
-完成以下内容
-- 灰度图
-- 直方图均衡化
-- 高斯滤波,中值滤波
-- 边缘检测(sobel)
-
-## 1. 并行计算基础
-
-在实现CuImage库的过程中，我们利用了NVIDIA的CUDA平台进行并行计算。并行计算的核心思想是将大型计算任务分解为多个小任务，这些小任务可以同时在多个处理单元上执行。在CUDA编程模型中，这些处理单元被组织为线程，线程又被组织为块（Block），多个块组成一个网格（Grid）。
-
-### 基本并行模式
-
-在我们的实现中，每个像素的处理通常由一个独立的线程完成，这种并行策略称为数据并行。我们采用以下固定模式组织线程：
-
-```cuda
-dim3 blockSize(16, 16);  // 每个块包含16×16=256个线程
-dim3 gridSize((width + blockSize.x - 1) / blockSize.x, 
-              (height + blockSize.y - 1) / blockSize.y);
-```
-
-这种组织方式可以确保对于任意大小的图像，都有足够的线程来处理每一个像素，同时保持了良好的硬件利用率。
-
-## 2. 灰度图转换
-
-### 算法原理
-
-灰度转换是将彩色图像（通常是RGB三通道）转换为灰度图像的过程。我们使用标准的加权公式进行转换：
-
-Gray = 0.299×R + 0.587×G + 0.114×B
-
-这个公式考虑了人眼对不同颜色的敏感度，绿色通道的权重最高，因为人眼对绿色最为敏感。
-
-### 并行实现
-
-```cuda
 __global__ void convertToGrayKernel(uchar *d_image, int width, int height, int channels)
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -52,48 +20,8 @@ __global__ void convertToGrayKernel(uchar *d_image, int width, int height, int c
         d_image[idx + 2] = gray;
     }
 }
-```
 
-在这个实现中：
-- 每个线程负责处理一个像素
-- 线程通过其在块中的位置以及块在网格中的位置计算出它要处理的像素坐标
-- 边界检查确保不会访问图像范围外的内存
-- 对于输入的三通道图像，将计算出的灰度值赋给所有三个通道，保持图像格式不变
-
-并行优势：这种实现方式使得成千上万个像素可以同时进行灰度转换，大大加速了处理速度。
-
-## 3. 高斯滤波
-
-### 算法原理
-
-高斯滤波是一种常用的图像平滑技术，它使用高斯函数作为卷积核对图像进行模糊处理。高斯函数是：
-
-G(x) = (1/√(2πσ²))·e^(-(x²)/(2σ²))
-
-二维高斯函数是分离的，这意味着二维高斯卷积可以分解为两个一维卷积，先水平方向再垂直方向，这大大提高了计算效率。
-
-### 并行实现
-
-我们的实现利用了高斯核的可分离性，将二维卷积分为两步一维卷积：
-
-1. 首先创建一维高斯核:
-```cuda
-// 计算高斯函数值
-for (int i = 0; i < kernelSize; i++)
-{
-    int x = i - kernelRadius;
-    h_kernel[i] = expf(-(x * x) / (2 * sigma * sigma));
-    sum += h_kernel[i];
-}
-// 归一化核
-for (int i = 0; i < kernelSize; i++)
-{
-    h_kernel[i] /= sum;
-}
-```
-
-2. 水平方向卷积:
-```cuda
+// Define the kernel function for horizontal Gaussian blur
 __global__ void gaussianBlurHorizontalKernel(const uchar *input, uchar *output, int width, int height, int channels, 
                                            float *kernel, int kernelRadius)
 {
@@ -114,10 +42,8 @@ __global__ void gaussianBlurHorizontalKernel(const uchar *input, uchar *output, 
         }
     }
 }
-```
 
-3. 垂直方向卷积:
-```cuda
+// Define the kernel function for vertical Gaussian blur
 __global__ void gaussianBlurVerticalKernel(const uchar *input, uchar *output, int width, int height, int channels, 
                                          float *kernel, int kernelRadius)
 {
@@ -138,64 +64,42 @@ __global__ void gaussianBlurVerticalKernel(const uchar *input, uchar *output, in
         }
     }
 }
-```
 
-并行优势：
-- 分离卷积将计算复杂度从O(k²)降低到O(2k)，其中k是核大小
-- 每个像素的处理完全独立，非常适合GPU的并行处理
-- 在处理边界时使用了镜像填充（clamp-to-edge），避免了额外的边界检查
-
-## 4. Otsu阈值处理
-
-### 算法原理
-
-Otsu方法是一种自动确定二值化阈值的算法，它通过最大化类间方差来找到最佳阈值。其步骤为：
-1. 计算图像的直方图
-2. 对每个可能的阈值，计算在该阈值下前景和背景的类间方差
-3. 选择使类间方差最大的阈值作为最优阈值
-
-### 并行实现
-
-我们的实现分为三个步骤：
-
-1. 并行计算直方图:
-```cuda
+// Kernel to compute histogram in parallel
 __global__ void computeHistogramKernel(const uchar* image, int width, int height, int channels, 
                                      unsigned int* histogram, int numBins) 
 {
     __shared__ unsigned int localHist[256];
     
-    // 初始化共享内存中的直方图
+    // Initialize shared memory histogram
     int tid = threadIdx.x + threadIdx.y * blockDim.x;
     int blockSize = blockDim.x * blockDim.y;
     
-    // 每个线程初始化一些直方图bins
+    // Each thread initializes some bins
     for (int i = tid; i < numBins; i += blockSize) {
         localHist[i] = 0;
     }
     __syncthreads();
     
-    // 每个线程处理其负责的像素区域
+    // Each thread processes pixels from its assigned region
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
     if (x < width && y < height) {
         int idx = (y * width + x) * channels;
-        // 对于灰度图，我们只需要第一个通道
+        // For grayscale, we just need the first channel
         uchar pixelValue = image[idx];
         atomicAdd(&localHist[pixelValue], 1);
     }
     __syncthreads();
     
-    // 每个线程更新全局直方图中的一些bins
+    // Each thread updates some bins in the global histogram
     for (int i = tid; i < numBins; i += blockSize) {
         atomicAdd(&histogram[i], localHist[i]);
     }
 }
-```
 
-2. 并行寻找最佳阈值:
-```cuda
+// Kernel to find the optimal threshold
 __global__ void findOtsuThresholdKernel(const unsigned int* histogram, int totalPixels, int numBins, int* threshold) 
 {
     __shared__ float maxVariance;
@@ -207,7 +111,7 @@ __global__ void findOtsuThresholdKernel(const unsigned int* histogram, int total
     }
     __syncthreads();
     
-    // 每个线程处理一个潜在的阈值
+    // Each thread handles one potential threshold value
     int t = threadIdx.x + blockIdx.x * blockDim.x;
     
     if (t < numBins) {
@@ -216,7 +120,7 @@ __global__ void findOtsuThresholdKernel(const unsigned int* histogram, int total
         int wB = 0;
         int wF = 0;
         
-        // 计算阈值t以下的直方图总和
+        // Sum histogram up to threshold t
         for (int i = 0; i <= t; i++) {
             wB += histogram[i];
             sumB += i * histogram[i];
@@ -232,10 +136,10 @@ __global__ void findOtsuThresholdKernel(const unsigned int* histogram, int total
         float mF = (wF > 0) ? (float)(sum - sumB) / wF : 0;
         float varBetween = (float)wB * (float)wF * (mB - mF) * (mB - mF);
         
-        // 原子操作更新最大方差和阈值
+        // Update the maximum variance and threshold atomically
         if (varBetween > 0) {
             atomicMax((int*)&maxVariance, __float_as_int(varBetween));
-            // 第二次同步确保maxVariance在比较前已更新
+            // Need a second synchronization to ensure maxVariance is updated before comparison
             __syncthreads();
             
             if (__float_as_int(varBetween) == __float_as_int(maxVariance)) {
@@ -244,10 +148,8 @@ __global__ void findOtsuThresholdKernel(const unsigned int* histogram, int total
         }
     }
 }
-```
 
-3. 并行应用阈值:
-```cuda
+// Kernel to apply threshold
 __global__ void applyThresholdKernel(uchar* image, int width, int height, int channels, int threshold) 
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -260,29 +162,8 @@ __global__ void applyThresholdKernel(uchar* image, int width, int height, int ch
         }
     }
 }
-```
 
-并行优势：
-- 直方图计算使用共享内存减少全局内存访问冲突
-- 在寻找最佳阈值时，每个线程并行计算不同阈值下的类间方差
-- 使用原子操作安全地更新共享的最大方差和最佳阈值
-- 最后的二值化处理实现了全并行，每个像素独立处理
-
-## 5. Canny边缘检测
-
-### 算法原理
-
-Canny边缘检测是一种经典的边缘检测算法，包含以下步骤：
-1. 高斯滤波去噪
-2. 计算梯度幅值和方向（使用Sobel算子）
-3. 非极大值抑制
-4. 双阈值处理和边缘跟踪
-
-### 并行实现
-
-#### 5.1 Sobel梯度计算
-
-```cuda
+// Sobel kernel for gradient computation
 __global__ void sobelKernel(const uchar* input, float* gradientX, float* gradientY, float* magnitude, uchar* direction, 
                           int width, int height, int channels) 
 {
@@ -290,13 +171,13 @@ __global__ void sobelKernel(const uchar* input, float* gradientX, float* gradien
     int y = blockIdx.y * blockDim.y + threadIdx.y;
     
     if (x < width && y < height) {
-        // 3x3 Sobel核
+        // 3x3 Sobel kernels
         const int sobel_x[3][3] = {{-1, 0, 1}, {-2, 0, 2}, {-1, 0, 1}};
         const int sobel_y[3][3] = {{-1, -2, -1}, {0, 0, 0}, {1, 2, 1}};
         
         float gx = 0.0f, gy = 0.0f;
         
-        // 应用Sobel算子
+        // Apply Sobel operator
         for (int ky = -1; ky <= 1; ky++) {
             for (int kx = -1; kx <= 1; kx++) {
                 int sampleY = min(max(y + ky, 0), height - 1);
@@ -309,36 +190,33 @@ __global__ void sobelKernel(const uchar* input, float* gradientX, float* gradien
             }
         }
         
-        // 存储梯度值
+        // Store gradient values
         int idx = y * width + x;
         gradientX[idx] = gx;
         gradientY[idx] = gy;
         
-        // 计算梯度幅值
+        // Compute gradient magnitude
         magnitude[idx] = sqrtf(gx * gx + gy * gy);
         
-        // 计算梯度方向（量化为4个方向：0°, 45°, 90°, 135°）
+        // Compute gradient direction (quantized to 4 directions: 0, 45, 90, 135 degrees)
         float angle = atan2f(abs(gy), abs(gx)) * 180.0f / M_PI;
         
-        // 方向量化
+        // Quantize direction: 0, 45, 90, 135
         uchar dir;
         if ((angle >= 0 && angle < 22.5) || (angle >= 157.5 && angle <= 180))
-            dir = 0;      // 0度（水平）
+            dir = 0;      // 0 degrees (horizontal)
         else if (angle >= 22.5 && angle < 67.5)
-            dir = 45;     // 45度（对角线）
+            dir = 45;     // 45 degrees (diagonal)
         else if (angle >= 67.5 && angle < 112.5)
-            dir = 90;     // 90度（垂直）
+            dir = 90;     // 90 degrees (vertical)
         else
-            dir = 135;    // 135度（对角线）
+            dir = 135;    // 135 degrees (diagonal)
             
         direction[idx] = dir;
     }
 }
-```
 
-#### 5.2 非极大值抑制（使用双线性插值）
-
-```cuda
+// Non-maximum suppression kernel with bilinear interpolation
 __global__ void nonMaxSuppressionKernel(const float* magnitude, const uchar* direction, uchar* output, 
                                       int width, int height) 
 {
@@ -368,7 +246,7 @@ __global__ void nonMaxSuppressionKernel(const float* magnitude, const uchar* dir
                 break;
         }
         
-        // 在梯度方向上检查插值点
+        // 检查梯度方向上的插值
         float mag1 = 0.0f, mag2 = 0.0f;
         
         // 正方向插值
@@ -425,11 +303,8 @@ __global__ void nonMaxSuppressionKernel(const float* magnitude, const uchar* dir
         output[idx] = (mag >= mag1 && mag >= mag2) ? static_cast<uchar>(min(mag, 255.0f)) : 0;
     }
 }
-```
 
-#### 5.3 改进的滞后阈值处理
-
-```cuda
+// 改进的滞后阈值处理核函数 - 使用更细致的分类
 __global__ void improvedHysteresisThresholdingKernel(const uchar* input, uchar* output, int width, int height, 
                                                    int lowThreshold, int highThreshold) 
 {
@@ -443,7 +318,7 @@ __global__ void improvedHysteresisThresholdingKernel(const uchar* input, uchar* 
         if (val >= highThreshold) {
             output[idx] = 255;  // 强边缘
         } else if (val >= lowThreshold) {
-            // 对于弱边缘，进一步将它们分级
+            // 对于弱边缘，我们进一步将它们分级
             // 这样在边缘跟踪时可以优先处理更强的弱边缘
             int strength = ((val - lowThreshold) * 127) / (highThreshold - lowThreshold);
             output[idx] = 128 + strength; // 128-254之间的值表示弱边缘的强度
@@ -452,11 +327,8 @@ __global__ void improvedHysteresisThresholdingKernel(const uchar* input, uchar* 
         }
     }
 }
-```
 
-#### 5.4 改进的边缘跟踪
-
-```cuda
+// 改进的边缘跟踪核函数 - 使用更精细的边缘连接逻辑
 __global__ void improvedEdgeTrackingKernel(uchar* edges, int width, int height, bool* changed) 
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -467,7 +339,7 @@ __global__ void improvedEdgeTrackingKernel(uchar* edges, int width, int height, 
         
         // 只处理弱边缘 (128-254)
         if (edges[idx] >= 128 && edges[idx] < 255) {
-            // 计算连接强度 - 基于周围强边缘的数量和距离
+            // 计算连接强度 - 弱边缘的强度和周围强边缘的数量和距离有关
             float connectionStrength = 0.0f;
             bool hasStrongNeighbor = false;
             
@@ -511,7 +383,7 @@ __global__ void improvedEdgeTrackingKernel(uchar* edges, int width, int height, 
                             // 距离越远权重越小
                             float distance = sqrtf(dx*dx + dy*dy);
                             float weight = 1.0f / distance;
-                            connectionStrength += weight * 0.5f; // 降低远处边缘的整体贡献
+                            connectionStrength += weight * 0.5f; // 乘以0.5来降低5x5部分的整体贡献
                             hasStrongNeighbor = true;
                         }
                     }
@@ -521,7 +393,7 @@ __global__ void improvedEdgeTrackingKernel(uchar* edges, int width, int height, 
             // 基于连接强度和弱边缘自身的强度决定是否保留
             float selfStrength = (float)(edges[idx] - 128) / 127.0f; // 归一化的弱边缘强度
             
-            // 决策逻辑
+            // 决策逻辑: 强连接、或者较强的弱边缘且有一定连接
             if (connectionStrength >= 2.0f || 
                 (connectionStrength >= 1.0f && selfStrength >= 0.5f) ||
                 (hasStrongNeighbor && selfStrength >= 0.75f)) {
@@ -531,11 +403,8 @@ __global__ void improvedEdgeTrackingKernel(uchar* edges, int width, int height, 
         }
     }
 }
-```
 
-#### 5.5 最终清理
-
-```cuda
+// 改进的清理核函数 - 删除未连接的弱边缘，保留强边缘
 __global__ void improvedCleanupKernel(uchar* edges, int width, int height) 
 {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
@@ -548,47 +417,272 @@ __global__ void improvedCleanupKernel(uchar* edges, int width, int height)
         }
     }
 }
-```
 
-并行优势：
-- Sobel计算在各个像素上并行进行，每个线程负责一个像素的梯度计算
-- 非极大值抑制使用了更精确的双线性插值方法，提高了边缘定位精度
-- 边缘跟踪算法使用了迭代方法，每次迭代都并行处理所有像素，直到没有变化为止
-- 将弱边缘分级（128-254）而不是简单二值化，这使得边缘跟踪能够优先处理更可能是真实边缘的像素
-- 边缘连接使用了更大的5x5邻域和更复杂的连接强度计算，提高了连接质量
+CuImage::CuImage() : d_image(nullptr), width(0), height(0), channels(0) {}
 
-## 6. 性能优化技术
+CuImage::~CuImage()
+{
+    freeDeviceMemory();
+}
 
-在实现这些图像处理算法时，我们应用了多种CUDA优化技术：
+void CuImage::allocateDeviceMemory()
+{
+    if (d_image)
+        cudaFree(d_image);
 
-### 6.1 内存访问优化
+    size_t size = width * height * channels * sizeof(uchar);
+    cudaMalloc(&d_image, size);
+}
 
-- **合并访问**：尽可能使相邻的线程访问相邻的内存位置，提高内存访问效率
-- **共享内存**：在直方图计算中使用共享内存来减少全局内存访问
-- **合理的线程块大小**：使用16×16的线程块大小，是在性能和灵活性之间的良好平衡
+void CuImage::freeDeviceMemory()
+{
+    if (d_image)
+    {
+        cudaFree(d_image);
+        d_image = nullptr;
+    }
+}
 
-### 6.2 计算优化
+void CuImage::loadImage(const std::string &filename)
+{
+    image = cv::imread(filename);
+    if (image.empty())
+    {
+        std::cerr << "Error: Could not load image!" << std::endl;
+        return;
+    }
 
-- **内核分离**：将复杂算法分解为多个步骤，每个步骤使用独立的核函数
-- **分离卷积**：在高斯滤波中，利用卷积核的可分离性，将二维卷积分为两步一维卷积
-- **原子操作**：在需要多个线程更新同一内存位置的场景（如直方图计算、寻找最佳阈值）中使用原子操作
-- **边界处理**：通过镜像填充（clamp-to-edge）处理图像边界，减少分支判断
+    width = image.cols;
+    height = image.rows;
+    channels = image.channels();
 
-### 6.3 工作流优化
+    allocateDeviceMemory();
+    cudaMemcpy(d_image, image.data, width * height * channels * sizeof(uchar), cudaMemcpyHostToDevice);
+}
 
-- **异步操作**：使用cudaDeviceSynchronize()确保GPU操作完成
-- **内存管理**：明确的内存分配和释放，避免内存泄漏
-- **流水线处理**：在Canny算法中，将处理分为多个阶段，每个阶段的输出作为下一阶段的输入
+void CuImage::showImage(const std::string &windowName)
+{
+    cv::imshow(windowName, image);
+    cv::waitKey(0);
+}
 
-## 7. 结论与未来工作
+void CuImage::saveImage(const std::string &filename)
+{
+    cudaMemcpy(image.data, d_image, width * height * channels * sizeof(uchar), cudaMemcpyDeviceToHost);
+    cv::imwrite(filename, image);
+}
 
-通过CUDA并行计算，我们实现了高效的图像处理库，包括灰度转换、高斯滤波、Otsu阈值处理和Canny边缘检测等功能。这些算法充分利用了GPU的并行计算能力，相比CPU实现有显著的性能提升。
+void CuImage::convertToGray()
+{
+    dim3 blockSize(16, 16);
+    dim3 gridSize((width + blockSize.x - 1) / blockSize.x, (height + blockSize.y - 1) / blockSize.y);
 
-未来可能的改进方向包括：
-1. 实现更多图像处理功能，如霍夫变换、SIFT特征提取等
-2. 进一步优化内存访问模式，减少全局内存访问
-3. 利用CUDA动态并行性处理复杂的递归算法
-4. 使用CUDA流实现并行数据传输和计算
-5. 开发更通用的接口，使库更易于使用
+    convertToGrayKernel<<<gridSize, blockSize>>>(d_image, width, height, channels);
+    cudaDeviceSynchronize();
 
-![alt text](img/canny.jpg)
+    cudaMemcpy(image.data, d_image, width * height * channels * sizeof(uchar), cudaMemcpyDeviceToHost);
+}
+
+
+void CuImage::GaussianBlur(int kernelSize)
+{
+    if (kernelSize <= 0 || kernelSize % 2 == 0)
+    {
+        std::cerr << "Kernel size must be a positive odd number" << std::endl;
+        return;
+    }
+
+    // 计算高斯核的半径
+    int kernelRadius = kernelSize / 2;
+    
+    // 创建高斯核
+    float sigma = kernelSize / 6.0f; // Rule of thumb: sigma = kernelSize/6
+    float *h_kernel = new float[kernelSize];
+    float sum = 0.0f;
+    
+    // 计算高斯核值
+    for (int i = 0; i < kernelSize; i++)
+    {
+        int x = i - kernelRadius;
+        h_kernel[i] = expf(-(x * x) / (2 * sigma * sigma));
+        sum += h_kernel[i];
+    }
+    
+    // 归一化高斯核
+    for (int i = 0; i < kernelSize; i++)
+    {
+        h_kernel[i] /= sum;
+    }
+    
+    // 分配设备内存
+    float *d_kernel;
+    cudaMalloc(&d_kernel, kernelSize * sizeof(float));
+    cudaMemcpy(d_kernel, h_kernel, kernelSize * sizeof(float), cudaMemcpyHostToDevice);
+    
+    // Allocate memory for temporary image data
+    uchar *d_temp;
+    cudaMalloc(&d_temp, width * height * channels * sizeof(uchar));
+    
+    // 初始化读取和写入的网格和块大小
+    dim3 blockSize(16, 16);
+    dim3 gridSize((width + blockSize.x - 1) / blockSize.x, (height + blockSize.y - 1) / blockSize.y);
+    
+    // 水平
+    gaussianBlurHorizontalKernel<<<gridSize, blockSize>>>(d_image, d_temp, width, height, channels, d_kernel, kernelRadius);
+    
+    // 垂直
+    gaussianBlurVerticalKernel<<<gridSize, blockSize>>>(d_temp, d_image, width, height, channels, d_kernel, kernelRadius);
+    
+    // 同步保证完成
+    cudaDeviceSynchronize();
+    
+    // 写回结果到主机
+    cudaMemcpy(image.data, d_image, width * height * channels * sizeof(uchar), cudaMemcpyDeviceToHost);
+    
+    // 释放
+    cudaFree(d_temp);
+    cudaFree(d_kernel);
+    delete[] h_kernel;
+}
+
+void CuImage::OtsuThreshold()
+{
+    if (channels == 3) {
+        convertToGray();
+    }
+    
+    const int numBins = 256; // For 8-bit grayscale image
+    
+    // 分配设备内存
+    unsigned int* d_histogram;
+    cudaMalloc(&d_histogram, numBins * sizeof(unsigned int));
+    cudaMemset(d_histogram, 0, numBins * sizeof(unsigned int));
+    
+    
+    dim3 blockSize(16, 16);
+    dim3 gridSize((width + blockSize.x - 1) / blockSize.x, 
+                  (height + blockSize.y - 1) / blockSize.y);
+    
+    // 并行计算直方图
+    computeHistogramKernel<<<gridSize, blockSize>>>(d_image, width, height, channels, d_histogram, numBins);
+    
+    // 分配阈值的内存，方便后续计算和传递
+    int* d_threshold;
+    cudaMalloc(&d_threshold, sizeof(int));
+    cudaMemset(d_threshold, 0, sizeof(int));
+    
+    // 计算最佳阈值
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (numBins + threadsPerBlock - 1) / threadsPerBlock;
+    findOtsuThresholdKernel<<<blocksPerGrid, threadsPerBlock>>>(
+        d_histogram, width * height, numBins, d_threshold);
+    
+    int threshold;
+    cudaMemcpy(&threshold, d_threshold, sizeof(int), cudaMemcpyDeviceToHost);
+    
+    // 应用
+    applyThresholdKernel<<<gridSize, blockSize>>>(d_image, width, height, channels, threshold);
+    cudaDeviceSynchronize();
+    
+
+    cudaMemcpy(image.data, d_image, width * height * channels * sizeof(uchar), cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_histogram);
+    cudaFree(d_threshold);
+    
+    std::cout << "Otsu threshold value: " << threshold << std::endl;
+}
+
+void CuImage::Canny(int lowThreshold, int highThreshold)
+{
+    if (channels == 3) {
+        convertToGray();
+    }
+    
+    //高斯模糊
+    GaussianBlur(3);
+    
+    //分配设备内存
+    float *d_gradientX, *d_gradientY, *d_magnitude;
+    uchar *d_direction, *d_nms, *d_edges;
+    
+    size_t imageSize = width * height * sizeof(float);
+    size_t byteSize = width * height * sizeof(uchar);
+    
+    cudaMalloc(&d_gradientX, imageSize);
+    cudaMalloc(&d_gradientY, imageSize);
+    cudaMalloc(&d_magnitude, imageSize);
+    cudaMalloc(&d_direction, byteSize);
+    cudaMalloc(&d_nms, byteSize);
+    cudaMalloc(&d_edges, byteSize);
+    
+    
+    dim3 blockSize(16, 16);
+    dim3 gridSize((width + blockSize.x - 1) / blockSize.x, 
+                  (height + blockSize.y - 1) / blockSize.y);
+    
+    // Step 1: 计算sobel算子梯度
+    sobelKernel<<<gridSize, blockSize>>>(d_image, d_gradientX, d_gradientY, 
+                                      d_magnitude, d_direction, width, height, channels);
+    
+    // Step 2: 非极大值抑制
+    nonMaxSuppressionKernel<<<gridSize, blockSize>>>(d_magnitude, d_direction, d_nms, width, height);
+    
+    // Step 3: 双阈值
+    improvedHysteresisThresholdingKernel<<<gridSize, blockSize>>>(d_nms, d_edges, width, height, lowThreshold, highThreshold);
+    
+    // Step 4: 边缘跟踪
+    bool *d_changed;
+    bool h_changed;
+    cudaMalloc(&d_changed, sizeof(bool));
+    
+ 
+    for (int i = 0; i < 10; i++) {  // 迭代次数
+        h_changed = false;
+        cudaMemcpy(d_changed, &h_changed, sizeof(bool), cudaMemcpyHostToDevice);
+        
+        improvedEdgeTrackingKernel<<<gridSize, blockSize>>>(d_edges, width, height, d_changed);
+        
+        cudaMemcpy(&h_changed, d_changed, sizeof(bool), cudaMemcpyDeviceToHost);
+        if (!h_changed) break;  
+    }
+    
+    // Step 5: 删除未连接的弱边缘
+    improvedCleanupKernel<<<gridSize, blockSize>>>(d_edges, width, height);
+    
+    
+    if (channels == 1) {
+        cudaMemcpy(d_image, d_edges, byteSize, cudaMemcpyDeviceToDevice);
+    } else if (channels == 3) {
+        
+        uchar* h_edges = new uchar[byteSize];
+        cudaMemcpy(h_edges, d_edges, byteSize, cudaMemcpyDeviceToHost);
+        
+        uchar* h_result = new uchar[width * height * channels];
+        for (int i = 0; i < width * height; i++) {
+            for (int c = 0; c < channels; c++) {
+                h_result[i * channels + c] = h_edges[i];
+            }
+        }
+        
+        cudaMemcpy(d_image, h_result, width * height * channels * sizeof(uchar), cudaMemcpyHostToDevice);
+        
+        delete[] h_edges;
+        delete[] h_result;
+    }
+    
+    // Synchronize to ensure completion
+    cudaDeviceSynchronize();
+    
+    // Copy result back to host
+    cudaMemcpy(image.data, d_image, width * height * channels * sizeof(uchar), cudaMemcpyDeviceToHost);
+    
+    // Free allocated memory
+    cudaFree(d_gradientX);
+    cudaFree(d_gradientY);
+    cudaFree(d_magnitude);
+    cudaFree(d_direction);
+    cudaFree(d_nms);
+    cudaFree(d_edges);
+    cudaFree(d_changed);
+}
