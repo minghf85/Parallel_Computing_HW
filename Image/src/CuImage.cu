@@ -492,15 +492,15 @@ void CuImage::GaussianBlur(int kernelSize)
         return;
     }
 
-    // Calculate kernel radius from kernel size
+    // 计算高斯核的半径
     int kernelRadius = kernelSize / 2;
     
-    // Create Gaussian kernel
+    // 创建高斯核
     float sigma = kernelSize / 6.0f; // Rule of thumb: sigma = kernelSize/6
     float *h_kernel = new float[kernelSize];
     float sum = 0.0f;
     
-    // Calculate Gaussian function values
+    // 计算高斯核值
     for (int i = 0; i < kernelSize; i++)
     {
         int x = i - kernelRadius;
@@ -508,13 +508,13 @@ void CuImage::GaussianBlur(int kernelSize)
         sum += h_kernel[i];
     }
     
-    // Normalize the kernel
+    // 归一化高斯核
     for (int i = 0; i < kernelSize; i++)
     {
         h_kernel[i] /= sum;
     }
     
-    // Allocate device memory for kernel
+    // 分配设备内存
     float *d_kernel;
     cudaMalloc(&d_kernel, kernelSize * sizeof(float));
     cudaMemcpy(d_kernel, h_kernel, kernelSize * sizeof(float), cudaMemcpyHostToDevice);
@@ -523,23 +523,23 @@ void CuImage::GaussianBlur(int kernelSize)
     uchar *d_temp;
     cudaMalloc(&d_temp, width * height * channels * sizeof(uchar));
     
-    // Define block and grid dimensions
+    // 初始化读取和写入的网格和块大小
     dim3 blockSize(16, 16);
     dim3 gridSize((width + blockSize.x - 1) / blockSize.x, (height + blockSize.y - 1) / blockSize.y);
     
-    // Apply horizontal blur
+    // 水平
     gaussianBlurHorizontalKernel<<<gridSize, blockSize>>>(d_image, d_temp, width, height, channels, d_kernel, kernelRadius);
     
-    // Apply vertical blur
+    // 垂直
     gaussianBlurVerticalKernel<<<gridSize, blockSize>>>(d_temp, d_image, width, height, channels, d_kernel, kernelRadius);
     
-    // Synchronize to ensure completion
+    // 同步保证完成
     cudaDeviceSynchronize();
     
-    // Copy result back to host
+    // 写回结果到主机
     cudaMemcpy(image.data, d_image, width * height * channels * sizeof(uchar), cudaMemcpyDeviceToHost);
     
-    // Free allocated memory
+    // 释放
     cudaFree(d_temp);
     cudaFree(d_kernel);
     delete[] h_kernel;
@@ -547,49 +547,46 @@ void CuImage::GaussianBlur(int kernelSize)
 
 void CuImage::OtsuThreshold()
 {
-    // First convert to grayscale if needed (3 channels)
     if (channels == 3) {
         convertToGray();
     }
     
     const int numBins = 256; // For 8-bit grayscale image
     
-    // Allocate memory for histogram on device
+    // 分配设备内存
     unsigned int* d_histogram;
     cudaMalloc(&d_histogram, numBins * sizeof(unsigned int));
     cudaMemset(d_histogram, 0, numBins * sizeof(unsigned int));
     
-    // Calculate optimal block size
+    
     dim3 blockSize(16, 16);
     dim3 gridSize((width + blockSize.x - 1) / blockSize.x, 
                   (height + blockSize.y - 1) / blockSize.y);
     
-    // Compute histogram
+    // 并行计算直方图
     computeHistogramKernel<<<gridSize, blockSize>>>(d_image, width, height, channels, d_histogram, numBins);
     
-    // Allocate memory for threshold value
+    // 分配阈值的内存，方便后续计算和传递
     int* d_threshold;
     cudaMalloc(&d_threshold, sizeof(int));
     cudaMemset(d_threshold, 0, sizeof(int));
     
-    // Find optimal threshold
+    // 计算最佳阈值
     int threadsPerBlock = 256;
     int blocksPerGrid = (numBins + threadsPerBlock - 1) / threadsPerBlock;
     findOtsuThresholdKernel<<<blocksPerGrid, threadsPerBlock>>>(
         d_histogram, width * height, numBins, d_threshold);
     
-    // Copy threshold back to host
     int threshold;
     cudaMemcpy(&threshold, d_threshold, sizeof(int), cudaMemcpyDeviceToHost);
     
-    // Apply threshold
+    // 应用
     applyThresholdKernel<<<gridSize, blockSize>>>(d_image, width, height, channels, threshold);
     cudaDeviceSynchronize();
     
-    // Copy data back to host
+
     cudaMemcpy(image.data, d_image, width * height * channels * sizeof(uchar), cudaMemcpyDeviceToHost);
     
-    // Free allocated memory
     cudaFree(d_histogram);
     cudaFree(d_threshold);
     
@@ -598,15 +595,14 @@ void CuImage::OtsuThreshold()
 
 void CuImage::Canny(int lowThreshold, int highThreshold)
 {
-    // Convert to grayscale if needed
     if (channels == 3) {
         convertToGray();
     }
     
-    // Gaussian blur to reduce noise
+    //高斯模糊
     GaussianBlur(3);
     
-    // Allocate device memory for gradient computation
+    //分配设备内存
     float *d_gradientX, *d_gradientY, *d_magnitude;
     uchar *d_direction, *d_nms, *d_edges;
     
@@ -620,46 +616,45 @@ void CuImage::Canny(int lowThreshold, int highThreshold)
     cudaMalloc(&d_nms, byteSize);
     cudaMalloc(&d_edges, byteSize);
     
-    // Define block and grid dimensions
+    
     dim3 blockSize(16, 16);
     dim3 gridSize((width + blockSize.x - 1) / blockSize.x, 
                   (height + blockSize.y - 1) / blockSize.y);
     
-    // Step 1: Compute gradients using Sobel operator
+    // Step 1: 计算sobel算子梯度
     sobelKernel<<<gridSize, blockSize>>>(d_image, d_gradientX, d_gradientY, 
                                       d_magnitude, d_direction, width, height, channels);
     
-    // Step 2: Non-maximum suppression
+    // Step 2: 非极大值抑制
     nonMaxSuppressionKernel<<<gridSize, blockSize>>>(d_magnitude, d_direction, d_nms, width, height);
     
-    // Step 3: Hysteresis thresholding (initial marking)
+    // Step 3: 双阈值
     improvedHysteresisThresholdingKernel<<<gridSize, blockSize>>>(d_nms, d_edges, width, height, lowThreshold, highThreshold);
     
-    // Step 4: Edge tracking by hysteresis (multiple passes)
+    // Step 4: 边缘跟踪
     bool *d_changed;
     bool h_changed;
     cudaMalloc(&d_changed, sizeof(bool));
     
-    // Perform edge tracking until no more changes
-    for (int i = 0; i < 10; i++) {  // Limit iterations to avoid infinite loop
+ 
+    for (int i = 0; i < 10; i++) {  // 迭代次数
         h_changed = false;
         cudaMemcpy(d_changed, &h_changed, sizeof(bool), cudaMemcpyHostToDevice);
         
         improvedEdgeTrackingKernel<<<gridSize, blockSize>>>(d_edges, width, height, d_changed);
         
         cudaMemcpy(&h_changed, d_changed, sizeof(bool), cudaMemcpyDeviceToHost);
-        if (!h_changed) break;  // No changes were made, we're done
+        if (!h_changed) break;  
     }
     
-    // Step 5: Final cleanup - remove weak edges
+    // Step 5: 删除未连接的弱边缘
     improvedCleanupKernel<<<gridSize, blockSize>>>(d_edges, width, height);
     
-    // Copy result back to original image (for all channels)
+    
     if (channels == 1) {
         cudaMemcpy(d_image, d_edges, byteSize, cudaMemcpyDeviceToDevice);
     } else if (channels == 3) {
-        // For 3-channel image, set all channels to the edge value
-        // Define a special kernel for this if performance is critical
+        
         uchar* h_edges = new uchar[byteSize];
         cudaMemcpy(h_edges, d_edges, byteSize, cudaMemcpyDeviceToHost);
         

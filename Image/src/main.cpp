@@ -1,7 +1,9 @@
 #include "CuImage.h"
 #include <iostream>
 //./main /home/ming/PROJECT/Parallel_Computing_HW/Image/img/test.jpg /home/ming/PROJECT/Parallel_Computing_HW/Image/img/gray.jpg gray
-//./main /home/ming/PROJECT/Parallel_Computing_HW/Image/img/test.jpg /home/ming/PROJECT/Parallel_Computing_HW/Image/img/clahe.jpg clahe
+//./main /home/ming/PROJECT/Parallel_Computing_HW/Image/img/test.jpg /home/ming/PROJECT/Parallel_Computing_HW/Image/img/blur.jpg blur
+//./main /home/ming/PROJECT/Parallel_Computing_HW/Image/img/test.jpg /home/ming/PROJECT/Parallel_Computing_HW/Image/img/otsu.jpg otsu
+//./main /home/ming/PROJECT/Parallel_Computing_HW/Image/img/test.jpg /home/ming/PROJECT/Parallel_Computing_HW/Image/img/canny.jpg canny
 int main(int argc, char **argv)
 {
     if (argc != 4)
