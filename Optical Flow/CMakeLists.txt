@@ -1,0 +1,67 @@
+cmake_minimum_required(VERSION 3.18)
+project(digital LANGUAGES CXX CUDA)
+
+# 强制设置 C++ 标准
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+# 设置 CUDA 标准
+set(CMAKE_CUDA_STANDARD 14)
+set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+# 使用环境变量获取 CUDA 路径
+if(DEFINED ENV{CUDA_PATH})
+    message(STATUS "Using CUDA_PATH from environment: $ENV{CUDA_PATH}")
+    set(CUDA_TOOLKIT_ROOT_DIR $ENV{CUDA_PATH})
+elseif(DEFINED ENV{CUDA_PATH_V11_8})
+    message(STATUS "Using CUDA_PATH_V11_8 from environment: $ENV{CUDA_PATH_V11_8}")
+    set(CUDA_TOOLKIT_ROOT_DIR $ENV{CUDA_PATH_V11_8})
+else()
+    message(FATAL_ERROR "Neither CUDA_PATH nor CUDA_PATH_V11_8 environment variables are set")
+endif()
+
+# 查找 CUDA
+find_package(CUDAToolkit REQUIRED)
+
+# 查找 OpenCV 并添加调试信息
+message(STATUS "开始查找OpenCV...")
+find_package(OpenCV REQUIRED)
+message(STATUS "OpenCV查找完成，状态信息如下:")
+message(STATUS "OpenCV_FOUND: ${OpenCV_FOUND}")
+message(STATUS "OpenCV_VERSION: ${OpenCV_VERSION}")
+message(STATUS "OpenCV_INCLUDE_DIRS: ${OpenCV_INCLUDE_DIRS}")
+message(STATUS "OpenCV_LIBRARIES: ${OpenCV_LIBRARIES}")
+
+# 添加源文件
+set(MAIN_SOURCES
+    src/main.cpp
+    src/CUfarneback.cu
+    src/SEfarneback.cpp
+)
+
+set(DISPLAY_SOURCES
+    src/FBdisplay.cpp
+    src/CUfarneback.cu
+)
+set(DC_SOURCES
+    src/detectcar.cpp
+    src/CUfarneback.cu
+)
+# 设置输出目录
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${PROJECT_BINARY_DIR})
+
+# 主可执行文件（带 CUDA）
+add_executable(main ${MAIN_SOURCES})
+target_include_directories(main PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(main PRIVATE ${OpenCV_LIBRARIES} CUDA::cudart)
+
+# 显示程序（带 CUDA）
+add_executable(FBdisplay ${DISPLAY_SOURCES})
+target_include_directories(FBdisplay PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(FBdisplay PRIVATE ${OpenCV_LIBRARIES} CUDA::cudart)
+
+# 应用程序（带 CUDA）
+add_executable(detectcar ${DC_SOURCES})
+target_include_directories(detectcar PRIVATE ${OpenCV_INCLUDE_DIRS})
+target_link_libraries(detectcar PRIVATE ${OpenCV_LIBRARIES} CUDA::cudart)
