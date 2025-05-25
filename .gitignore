@@ -68,3 +68,5 @@ CMakeUserPresets.json
 /Image/img
 /Image/build/main
 .vscode
+*.pptx
+*.pdf
