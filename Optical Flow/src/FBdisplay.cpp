@@ -1,15 +1,32 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
 #include <string>
+#include "CUfarneback.h"
 
-int main() {
+int main(int argc, char** argv) {
+    // 参数解析
+    int mode = 2; // 默认使用CUDA版本
+    std::string video_path = "H:/Project/Parallel_Computing_HW/Optical Flow/data/increase_constrast.mp4"; // 默认视频路径
+    
+    // 解析命令行参数
+    if (argc > 1) {
+        mode = std::stoi(argv[1]);
+    }
+    
+    if (argc > 2) {
+        video_path = argv[2];
+    }
+    
+    std::cout << "使用模式: " << (mode == 1 ? "CPU" : "CUDA") << std::endl;
+    std::cout << "视频路径: " << video_path << std::endl;
+    
     // 初始化视频捕获
-    cv::VideoCapture cap("../data/test.mp4");
+    cv::VideoCapture cap(video_path);
     if (!cap.isOpened()) {
         std::cerr << "Error: Could not open video." << std::endl;
         return -1;
     }
-
+    
     cv::Mat prev_frame, frame;
     cap >> prev_frame;
     if (prev_frame.empty()) {
@@ -36,11 +53,15 @@ int main() {
     cv::Mat flow, bgr_flow;
     cv::Mat magnitude, angle;
     std::string title;
+    
+    // 性能监控
+    int frame_count = 0;
+    double total_time = 0.0;
+    int memory_check_interval = 30; // 每30帧检查一次内存
 
     while (true) {
         cv::Mat vis;
-        
-        if (!pause) {
+          if (!pause) {
             cap >> frame;
             if (frame.empty()) {
                 break;  // 视频结束
@@ -49,13 +70,69 @@ int main() {
             cv::Mat curr_gray;
             cv::cvtColor(frame, curr_gray, cv::COLOR_BGR2GRAY);
             
-            // 计算密集光流
-            cv::calcOpticalFlowFarneback(
-                prev_gray, curr_gray, flow,
-                0.5, 3, 15,
-                3, 5, 1.2, 0
-            );
+            // 记录光流计算开始时间
+            double start_time = static_cast<double>(cv::getTickCount());
+            
+            // 光流算法参数
+            double pyr_scale = 0.5;
+            int levels = 3;
+            int winsize = 15;
+            int iterations = 3;
+            int poly_n = 5;
+            double poly_sigma = 1.2;
+            int flags = 0;
+    
+            // 清除之前的流场内存
+            flow.release();
+
+            // 根据mode选择使用CPU或GPU版本
+            if (mode == 1) {
+                // 使用OpenCV CPU版本
+                cv::calcOpticalFlowFarneback(
+                    prev_gray, curr_gray, flow,
+                    pyr_scale, levels, winsize,
+                    iterations, poly_n, poly_sigma, flags
+                );
+            } else {
+                // 使用CUDA GPU版本
+                cudaCalcOpticalFlowFarneback(
+                    prev_gray, curr_gray, flow,
+                    pyr_scale, levels, winsize,
+                    iterations, poly_n, poly_sigma, flags
+                );
+            }
+            
+            // 计算处理时间
+            double end_time = static_cast<double>(cv::getTickCount());
+            double proc_time = (end_time - start_time) / cv::getTickFrequency() * 1000; // 毫秒
+            total_time += proc_time;
+            frame_count++;
+            
+            // 每隔一定帧数输出性能信息
+            if (frame_count % memory_check_interval == 0) {
+                size_t free_memory, total_memory;
+                cudaMemGetInfo(&free_memory, &total_memory);
+                
+                double avg_time = total_time / frame_count;
+                std::cout << "Frame: " << frame_count 
+                          << ", Avg Time: " << avg_time << " ms"
+                          << ", GPU Memory - Free: " << (free_memory/1024/1024) << " MB"
+                          << ", Total: " << (total_memory/1024/1024) << " MB" << std::endl;
+                
+                // 检测内存泄漏
+                static size_t last_free_memory = free_memory;
+                if (last_free_memory > free_memory && 
+                    (last_free_memory - free_memory) > 10*1024*1024) { // 超过10MB的变化
+                    std::cout << "警告：检测到内存减少 " 
+                              << (last_free_memory - free_memory)/1024/1024 
+                              << " MB" << std::endl;
+                }
+                last_free_memory = free_memory;
+            }
+            
+            // 更新参考帧 - 注意使用clone避免共享数据
             prev_gray = curr_gray.clone();
+            curr_gray.release(); // 显式释放不再需要的内存
 
             // 转换为极坐标（幅值和角度）
             cv::Mat flow_parts[2];
@@ -97,7 +174,7 @@ int main() {
                 cv::merge(hsv_planes, hsv);
                 cv::cvtColor(hsv, bgr_flow, cv::COLOR_HSV2BGR);
             } else {
-                std::cerr << "通道尺寸或类型不匹配，无法合并" << std::endl;
+                std::cerr << "channel not ok" << std::endl;
                 break;
             }
         }
@@ -192,9 +269,18 @@ int main() {
             display_mode = 3;
         else if (key == ' ')  // 暂停/继续
             pause = !pause;
-    }
-
+    }    // 释放资源
     cap.release();
     cv::destroyAllWindows();
+    
+    // 最终输出性能统计
+    if (frame_count > 0) {
+        std::cout << "处理完成。总帧数: " << frame_count 
+                  << ", 平均每帧处理时间: " << (total_time / frame_count) << " ms" << std::endl;
+    }
+    
+    // 清理CUDA环境
+    cudaDeviceReset();
+    
     return 0;
 }

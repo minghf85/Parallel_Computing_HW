@@ -1,7 +1,6 @@
 #pragma once
 
 #include <opencv2/opencv.hpp>
-#include <cuda_runtime.h>
 
 /**
  * @brief CUDA实现的Farneback稠密光流算法
@@ -34,7 +33,7 @@
  * - 多金字塔层级对大幅运动更有效，但会增加边缘模糊
  */
 
-bool cudaCalcOpticalFlowFarneback(
+bool serialCalcOpticalFlowFarneback(
     const cv::Mat& prev_img,
     const cv::Mat& next_img,
     cv::Mat& flow,

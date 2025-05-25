@@ -1,53 +1,50 @@
 #include <opencv2/opencv.hpp>
 #include <iostream>
+#include <fstream>
 #include "CUfarneback.h"
-
-// 添加串行版本的Farneback光流函数声明
-bool serialCalcOpticalFlowFarneback(
-    const cv::Mat& prev_img,
-    const cv::Mat& next_img,
-    cv::Mat& flow,
-    double pyr_scale = 0.5,
-    int levels = 3,
-    int winsize = 15,
-    int iterations = 3,
-    int poly_n = 5,
-    double poly_sigma = 1.2,
-    int flags = 0
-);
+#include "SEfarneback.h"
 
 // 帮助信息
 void showHelp() {
     std::cout << "Farneback Optical Flow Implementation Comparison" << std::endl;
-    std::cout << "Usage: program [mode]" << std::endl;
+    std::cout << "Usage: program [mode] [video_path]" << std::endl;
     std::cout << "  mode: 1 - OpenCV implementation (default)" << std::endl;
-    std::cout << "        2 - Serial implementation using CUDA with single thread" << std::endl;
-    std::cout << "        3 - CUDA parallel implementation" << std::endl;
+    std::cout << "        2 - CUDA parallel implementation" << std::endl;
+    std::cout << "        3 - Compare both implementations and calculate speedup" << std::endl;
+    std::cout << "        4 - Sequential implementation (SEfarneback)" << std::endl;
+    std::cout << "        5 - Compare SEfarneback and CUfarneback implementations" << std::endl;
+    std::cout << "  video_path: Path to the input video file" << std::endl;
 }
 
 int main(int argc, char** argv) {
     // 处理命令行参数
     int mode = 1; // 默认使用OpenCV实现
-    
+    std::string video_path = "H:/Project/Parallel_Computing_HW/Optical Flow/data/testspeedup.mp4"; // 默认视频路径
     if (argc > 1) {
         mode = std::atoi(argv[1]);
-        if (mode < 1 || mode > 3) {
+        if (mode < 1 || mode > 5) {
             showHelp();
             return -1;
         }
     }
     
+    if (argc > 2) {
+        video_path = argv[2];
+    }
+    
     std::cout << "Running in mode " << mode << ": ";
     switch (mode) {
         case 1: std::cout << "OpenCV implementation" << std::endl; break;
-        case 2: std::cout << "Serial implementation" << std::endl; break;
-        case 3: std::cout << "CUDA parallel implementation" << std::endl; break;
+        case 2: std::cout << "CUDA parallel implementation" << std::endl; break;
+        case 3: std::cout << "Comparing implementations and calculating speedup" << std::endl; break;
+        case 4: std::cout << "Sequential implementation (SEfarneback)" << std::endl; break;
+        case 5: std::cout << "Comparing SEfarneback and CUfarneback implementations" << std::endl; break;
     }
     
     // Open video file
-    cv::VideoCapture cap("../data/test2.mp4");
+    cv::VideoCapture cap(video_path);
     if (!cap.isOpened()) {
-        std::cerr << "Error opening video file" << std::endl;
+        std::cerr << "Error opening video file: " << video_path << std::endl;
         return -1;
     }
 
@@ -59,7 +56,7 @@ int main(int argc, char** argv) {
         return -1;
     }
 
-    // Convert to grayscale
+    // 直接转换为灰度图，不做任何预处理
     cv::cvtColor(prev_frame, prev_gray, cv::COLOR_BGR2GRAY);
     
     // Initialize HSV image for visualization
@@ -84,57 +81,231 @@ int main(int argc, char** argv) {
     // 设置窗口标题
     switch (mode) {
         case 1: window_title = "OpenCV Farneback Optical Flow"; break;
-        case 2: window_title = "Serial Farneback Optical Flow"; break;
-        case 3: window_title = "CUDA Parallel Farneback Optical Flow"; break;
+        case 2: window_title = "CUDA Parallel Farneback Optical Flow"; break;
+        case 3: window_title = "Optical Flow Comparison"; break;
+        case 4: window_title = "Sequential Farneback Optical Flow"; break;
+        case 5: window_title = "SEfarneback vs CUfarneback Comparison"; break;
     }
     
-    while (true) {
-        // Read next frame
-        cap >> frame;
-        if (frame.empty()) break;
+    if (mode == 3 || mode == 5) {
+        // 比较模式下，先用一种方法处理所有帧，再用另一种方法处理
+        std::vector<double> times_method1;
+        std::vector<double> times_method2;
+        double total_time_method1 = 0.0;
+        double total_time_method2 = 0.0;
+        std::string method1_name, method2_name;
         
-        // Convert to grayscale
-        cv::cvtColor(frame, curr_gray, cv::COLOR_BGR2GRAY);
+        if (mode == 3) {
+            method1_name = "OpenCV";
+            method2_name = "CUDA";
+        } else { // mode == 5
+            method1_name = "SEfarneback";
+            method2_name = "CUfarneback";
+        }
         
-        // Calculate optical flow based on selected mode
-        int64 start_time = cv::getTickCount();
+        // 处理第一种方法
+        std::cout << "Processing with " << method1_name << "..." << std::endl;
+        cap.set(cv::CAP_PROP_POS_FRAMES, 0); // 重置视频到第一帧
+        cap >> prev_frame;
+        cv::cvtColor(prev_frame, prev_gray, cv::COLOR_BGR2GRAY);
         
-        switch (mode) {
-            case 1: // OpenCV实现
+        frame_count = 0;
+        while (true) {
+            cap >> frame;
+            if (frame.empty()) break;
+            
+            cv::cvtColor(frame, curr_gray, cv::COLOR_BGR2GRAY);
+            
+            int64 start_time = cv::getTickCount();
+            if (mode == 3) {
                 cv::calcOpticalFlowFarneback(
                     prev_gray, curr_gray, flow,
                     pyr_scale, levels, winsize,
                     iterations, poly_n, poly_sigma, flags
                 );
-                break;
-                
-            case 2: // 串行实现（CUDA单线程）
+            } else { // mode == 5
                 serialCalcOpticalFlowFarneback(
                     prev_gray, curr_gray, flow,
                     pyr_scale, levels, winsize,
                     iterations, poly_n, poly_sigma, flags
                 );
-                break;
-                
-            case 3: // CUDA并行实现
-                cudaCalcOpticalFlowFarneback(
-                    prev_gray, curr_gray, flow,
-                    pyr_scale, levels, winsize,
-                    iterations, poly_n, poly_sigma, flags
-                );
-                break;
+            }
+            int64 end_time = cv::getTickCount();
+            
+            double frame_time = (end_time - start_time) / cv::getTickFrequency();
+            times_method1.push_back(frame_time);
+            total_time_method1 += frame_time;
+            
+            curr_gray.copyTo(prev_gray);
+            frame_count++;
+            
+            // 可选：显示进度
+            if (frame_count % 10 == 0) {
+                std::cout << "Processed " << frame_count << " frames with " << method1_name << std::endl;
+            }
         }
         
-        int64 end_time = cv::getTickCount();
-        proc_time += (end_time - start_time) / cv::getTickFrequency();
+        // 处理第二种方法
+        std::cout << "Processing with " << method2_name << "..." << std::endl;
+        cap.set(cv::CAP_PROP_POS_FRAMES, 0); // 重置视频到第一帧
+        cap >> prev_frame;
+        cv::cvtColor(prev_frame, prev_gray, cv::COLOR_BGR2GRAY);
         
-        frame_count++;
+        frame_count = 0;
+        while (true) {
+            cap >> frame;
+            if (frame.empty()) break;
+            
+            cv::cvtColor(frame, curr_gray, cv::COLOR_BGR2GRAY);
+            
+            int64 start_time = cv::getTickCount();
+            cudaCalcOpticalFlowFarneback(
+                prev_gray, curr_gray, flow,
+                pyr_scale, levels, winsize,
+                iterations, poly_n, poly_sigma, flags
+            );
+            int64 end_time = cv::getTickCount();
+            
+            double frame_time = (end_time - start_time) / cv::getTickFrequency();
+            times_method2.push_back(frame_time);
+            total_time_method2 += frame_time;
+            
+            curr_gray.copyTo(prev_gray);
+            frame_count++;
+            
+            // 可选：显示进度
+            if (frame_count % 10 == 0) {
+                std::cout << "Processed " << frame_count << " frames with " << method2_name << std::endl;
+            }
+        }
         
-        // Visualize the optical flow
+        // 去除最大和最小时间值
+        if (times_method1.size() > 2 && times_method2.size() > 2) {
+            // 对时间数组排序
+            std::sort(times_method1.begin(), times_method1.end());
+            std::sort(times_method2.begin(), times_method2.end());
+            
+            // 去除最大和最小值后重新计算总时间
+            double adjusted_total_time1 = 0.0;
+            double adjusted_total_time2 = 0.0;
+            
+            for (size_t i = 1; i < times_method1.size() - 1; i++) {
+                adjusted_total_time1 += times_method1[i];
+            }
+            
+            for (size_t i = 1; i < times_method2.size() - 1; i++) {
+                adjusted_total_time2 += times_method2[i];
+            }
+            
+            // 计算调整后的平均时间
+            double avg_time_method1 = adjusted_total_time1 / (times_method1.size() - 2);
+            double avg_time_method2 = adjusted_total_time2 / (times_method2.size() - 2);
+            
+            // 计算加速比
+            double speedup = avg_time_method1 / avg_time_method2;
+            
+            // 输出结果到文件和控制台
+            std::cout << "===== Performance Comparison =====" << std::endl;
+            std::cout << method1_name << " average processing time: " << avg_time_method1 * 1000 << " ms" << std::endl;
+            std::cout << method2_name << " average processing time: " << avg_time_method2 * 1000 << " ms" << std::endl;
+            std::cout << "Speedup: " << speedup << "x" << std::endl;
+            std::cout << "=================================" << std::endl;
+            
+            // 将结果输出到文件
+            std::ofstream result_file("performance_results.txt", std::ios::app);
+            if (result_file.is_open()) {
+                result_file << "===== Performance Comparison =====" << std::endl;
+                result_file << "Video: " << video_path << std::endl;
+                result_file << "Parameters: levels=" << levels << ", winsize=" << winsize 
+                            << ", iterations=" << iterations << ", poly_n=" << poly_n << std::endl;
+                result_file << method1_name << " average processing time: " << avg_time_method1 * 1000 << " ms" << std::endl;
+                result_file << method2_name << " average processing time: " << avg_time_method2 * 1000 << " ms" << std::endl;
+                result_file << "Speedup: " << speedup << "x" << std::endl;
+                result_file << "Frame count: " << frame_count << std::endl;
+                result_file << "=================================" << std::endl;
+                result_file.close();
+                std::cout << "Results saved to performance_results.txt" << std::endl;
+            }
+        } else {
+            std::cout << "Not enough frames to calculate meaningful statistics." << std::endl;
+        }
+          // 比较模式下直接退出，不需要可视化
+        std::cout << "Performance comparison completed. Exiting program." << std::endl;
+        // 释放资源
+        cap.release();
+        cv::destroyAllWindows();
+        return 0;
+    }
+    
+    while (true) {
+        // 只有在非比较模式或比较模式完成后才执行此循环
+        if (mode == 3 || mode == 5) {
+            // 比较模式下，这部分用于可视化
+            cap >> frame;
+            if (frame.empty()) break;
+            
+            cv::cvtColor(frame, curr_gray, cv::COLOR_BGR2GRAY);
+            
+            // 使用CUDA方法进行可视化
+            cudaCalcOpticalFlowFarneback(
+                prev_gray, curr_gray, flow,
+                pyr_scale, levels, winsize,
+                iterations, poly_n, poly_sigma, flags
+            );
+            
+            curr_gray.copyTo(prev_gray);
+            frame_count++;
+        } else {
+            // 非比较模式下的正常处理
+            // Read next frame
+            cap >> frame;
+            if (frame.empty()) break;
+            
+            // 直接转换为灰度图，不做任何预处理
+            cv::cvtColor(frame, curr_gray, cv::COLOR_BGR2GRAY);
+            
+            // Calculate optical flow based on selected mode
+            int64 start_time = cv::getTickCount();
+            
+            switch (mode) {
+                case 1: // OpenCV实现
+                    cv::calcOpticalFlowFarneback(
+                        prev_gray, curr_gray, flow,
+                        pyr_scale, levels, winsize,
+                        iterations, poly_n, poly_sigma, flags
+                    );
+                    break;
+                    
+                case 2: // CUDA并行实现
+                    cudaCalcOpticalFlowFarneback(
+                        prev_gray, curr_gray, flow,
+                        pyr_scale, levels, winsize,
+                        iterations, poly_n, poly_sigma, flags
+                    );
+                    break;
+                    
+                case 4: // 串行实现(SEfarneback)
+                    serialCalcOpticalFlowFarneback(
+                        prev_gray, curr_gray, flow,
+                        pyr_scale, levels, winsize,
+                        iterations, poly_n, poly_sigma, flags
+                    );
+                    break;
+            }
+            int64 end_time = cv::getTickCount();
+            proc_time += (end_time - start_time) / cv::getTickFrequency();
+            
+            frame_count++;
+            
+            // 更新上一帧
+            curr_gray.copyTo(prev_gray);
+        }
+        
+        // 可视化光流
         cv::Mat flow_parts[2], magnitude, angle;
         cv::split(flow, flow_parts);
         
-        // 检查光流数据是否有效并进行调试输出
+        // 检查光流数据
         double min_x, max_x, min_y, max_y;
         cv::minMaxLoc(flow_parts[0], &min_x, &max_x);
         cv::minMaxLoc(flow_parts[1], &min_y, &max_y);
@@ -144,55 +315,33 @@ int main(int argc, char** argv) {
             std::cout << "Flow range Y: " << min_y << " to " << max_y << std::endl;
         }
         
-        // 如果光流值太小，可以乘以一个放大因子来增强可视化效果
-        if (mode == 3) {
-            // CUDA模式可能需要调整光流值范围
-            double scale = 20.0; // 增大缩放因子
-            flow_parts[0] *= scale;
-            flow_parts[1] *= scale;
-        }
-        
+        // 计算幅值和角度
         cv::cartToPolar(flow_parts[0], flow_parts[1], magnitude, angle);
         
-        // Create HSV channels with the correct size
+        // 创建HSV图像
+        cv::Mat hsv_image(flow.size(), CV_8UC3);
         std::vector<cv::Mat> hsv_planes;
+        cv::split(hsv_image, hsv_planes);
         
-        // Hue channel (angle)
+        // 色调通道 - 角度
+        // hsv[..., 0] = ang * 180 / np.pi / 2  # 色调表示方向
         cv::Mat hue;
-        angle.convertTo(hue, CV_8U, 180 / CV_PI);
-        hsv_planes.push_back(hue);
+        angle.convertTo(hue, CV_32F, 180 / (2 * CV_PI));  // 角度转换为0-90度
+        hue.convertTo(hsv_planes[0], CV_8U);              // 转为8位
         
-        // 确保饱和度都为255，以获得更鲜艳的颜色
-        cv::Mat sat = cv::Mat::ones(angle.size(), CV_8UC1) * 255;
-        hsv_planes.push_back(sat);
+        // 饱和度通道 - 全设置为255
+        hsv_planes[1] = cv::Mat::ones(angle.size(), CV_8UC1) * 255;
         
-        // Value channel (magnitude)
-        cv::Mat val;
+        // 亮度通道 - 使用归一化的幅度
+        // hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
+        cv::normalize(magnitude, hsv_planes[2], 0, 255, cv::NORM_MINMAX);
+        hsv_planes[2].convertTo(hsv_planes[2], CV_8UC1);
         
-        // 确保幅值有足够的对比度
-        double min_mag, max_mag;
-        cv::minMaxLoc(magnitude, &min_mag, &max_mag);
+        // 合并通道并转换回BGR
+        cv::merge(hsv_planes, hsv_image);
+        cv::cvtColor(hsv_image, bgr, cv::COLOR_HSV2BGR);
         
-        if (frame_count % 30 == 0) {
-            std::cout << "Magnitude range: " << min_mag << " to " << max_mag << std::endl;
-        }
-        
-        // 强制规范化幅值，确保有可视效果
-        cv::normalize(magnitude, val, 0, 255, cv::NORM_MINMAX);
-        val.convertTo(val, CV_8UC1);
-        
-        // 如果模式3且最大幅值很小，设置亮度为阈值
-        if (mode == 3 && max_mag < 1.0) {
-            cv::threshold(val, val, 0, 255, cv::THRESH_BINARY);
-        }
-        
-        hsv_planes.push_back(val);
-        
-        // Merge channels and convert back to BGR
-        cv::merge(hsv_planes, hsv);
-        cv::cvtColor(hsv, bgr, cv::COLOR_HSV2BGR);
-        
-        // Display results
+        // 显示结果
         cv::imshow(window_title, bgr);
         
         // Print current performance stats
@@ -202,73 +351,16 @@ int main(int argc, char** argv) {
         
         // Break on ESC key
         if (cv::waitKey(30) == 27) break;
-        
-        // Update previous frame
-        curr_gray.copyTo(prev_gray);
     }
     
-    // Print final performance stats
-    std::cout << "Final average processing time: " << proc_time/frame_count * 1000 << " ms" << std::endl;
+    // Print final performance stats (only for non-comparison modes)
+    if (mode != 3 && mode != 5) {
+        std::cout << "Final average processing time: " << proc_time/frame_count * 1000 << " ms" << std::endl;
+    }
     
     // Release resources
     cap.release();
     cv::destroyAllWindows();
     
     return 0;
-}
-
-// 串行版本的Farneback光流算法实现（使用CUDA单线程）
-bool serialCalcOpticalFlowFarneback(
-    const cv::Mat& prev_img,
-    const cv::Mat& next_img,
-    cv::Mat& flow,
-    double pyr_scale,
-    int levels,
-    int winsize,
-    int iterations,
-    int poly_n,
-    double poly_sigma,
-    int flags
-) {
-    // 检查输入图像
-    if (prev_img.empty() || next_img.empty() || prev_img.size() != next_img.size() || 
-        prev_img.type() != next_img.type()) {
-        printf("Invalid input images\n");
-        return false;
-    }
-    
-    // 确保图像是单通道灰度图
-    cv::Mat prev_gray = prev_img.clone();
-    cv::Mat next_gray = next_img.clone();
-    
-    // 如果是8位图像，转换为32位浮点图像并归一化
-    if (prev_gray.type() != CV_32F) {
-        prev_gray.convertTo(prev_gray, CV_32F, 1.0/255.0);
-        next_gray.convertTo(next_gray, CV_32F, 1.0/255.0);
-    }
-    
-    // 准备输出光流图
-    int width = prev_gray.cols;
-    int height = prev_gray.rows;
-    if (flow.empty() || flow.size() != prev_gray.size() || flow.type() != CV_32FC2) {
-        flow.create(height, width, CV_32FC2);
-    }
-    
-    // 填充为零或使用初始流量
-    if (!(flags & cv::OPTFLOW_USE_INITIAL_FLOW)) {
-        flow.setTo(cv::Scalar::all(0));
-    }
-    
-    // 在这里实现串行版本的Farneback算法
-    // 设置CUDA在启动时使用单线程
-    cudaDeviceProp prop;
-    cudaGetDeviceProperties(&prop, 0); // 假设使用设备0
-    
-    // 修改CUDA内核配置为只使用1个线程（串行执行）
-    return cudaCalcOpticalFlowFarneback(
-        prev_gray, next_gray, flow,
-        pyr_scale, levels, winsize,
-        iterations, poly_n, poly_sigma,
-        flags | 0x10000000  // 添加一个自定义标志，在CUfarneback.cu中识别为串行模式
-    );
 }
