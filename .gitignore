@@ -69,3 +69,6 @@ CMakeUserPresets.json
 /Image/img
 /Image/build/main
 .vscode
+/Optical Flow/build
+*.pptx
+*.pdf
