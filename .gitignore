@@ -72,3 +72,6 @@ CMakeUserPresets.json
 /Optical Flow/build
 *.pptx
 *.pdf
+
+Report1.md
+Report2.md

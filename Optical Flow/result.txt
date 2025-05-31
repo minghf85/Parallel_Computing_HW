@@ -1,0 +1,34 @@
+CPU:R5 5600 GPU: 3080ti 10240 shaders
+===== Performance Comparison =====
+Video: H:/Project/Parallel_Computing_HW/Optical Flow/data/testspeedup.mp4
+Parameters: levels=3, winsize=15, iterations=3, poly_n=5
+SEfarneback average processing time: 6120.3 ms
+OpenCV average processing time: 286.206 ms
+Speedup: 21.3842x
+Frame count: 152
+=================================
+===== Performance Comparison =====
+Video: H:/Project/Parallel_Computing_HW/Optical Flow/data/testspeedup.mp4
+Parameters: levels=3, winsize=15, iterations=3, poly_n=5
+OpenCV average processing time: 294.254 ms
+CUDA average processing time: 40.6112 ms
+Speedup: 7.24564x
+Frame count: 152
+=================================
+===== Performance Comparison =====
+Video: H:/Project/Parallel_Computing_HW/Optical Flow/data/testspeedup.mp4
+Parameters: levels=3, winsize=15, iterations=3, poly_n=5
+SEfarneback average processing time: 6242.5 ms
+CUfarneback average processing time: 45.8509 ms
+Speedup: 136.148x
+Frame count: 152
+=================================
+CPU:Xeon(R) Gold 6330 GPU:3090 10496 shaders
+===== Performance Comparison =====
+Video: /root/autodl-tmp/Parallel_Computing_HW/Optical Flow/data/testspeedup.mp4
+Parameters: levels=3, winsize=15, iterations=3, poly_n=5
+OpenCV average processing time: 518.836 ms
+CUDA average processing time: 40.745 ms
+Speedup: 12.7337x
+Frame count: 152
+=================================

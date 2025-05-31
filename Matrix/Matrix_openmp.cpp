@@ -10,17 +10,17 @@ private:
     int size;
 
 public:
-    // æ„é€ å‡½æ•°
+    // ¹¹Ôìº¯Êı
     Matrix(int n) : size(n), data(n * n) {}
 
-    // è·å–çŸ©é˜µå¤§å°
+    // »ñÈ¡¾ØÕó´óĞ¡
     int getSize() const { return size; }
 
-    // è®¿é—®å…ƒç´ 
+    // ·ÃÎÊÔªËØ
     double& operator()(int i, int j) { return data[i * size + j]; }
     const double& operator()(int i, int j) const { return data[i * size + j]; }
 
-    // éšæœºåˆå§‹åŒ–çŸ©é˜µ
+    // Ëæ»ú³õÊ¼»¯¾ØÕó
     void randomInit() {
         std::random_device rd;
         std::mt19937 gen(rd());
@@ -31,7 +31,7 @@ public:
         }
     }
 
-    // ä¸²è¡Œç‰ˆæœ¬çš„çŸ©é˜µä¹˜æ³•
+    // ´®ĞĞ°æ±¾µÄ¾ØÕó³Ë·¨
     static Matrix multiply_serial(const Matrix& A, const Matrix& B) {
         int n = A.getSize();
         Matrix C(n);
@@ -48,7 +48,7 @@ public:
         return C;
     }
 
-    // å¹¶è¡Œç‰ˆæœ¬çš„çŸ©é˜µä¹˜æ³•
+    // ²¢ĞĞ°æ±¾µÄ¾ØÕó³Ë·¨
     static Matrix multiply_parallel(const Matrix& A, const Matrix& B) {
         int n = A.getSize();
         Matrix C(n);
@@ -64,7 +64,7 @@ public:
         return C;
     }
 
-    // å¹¶è¡Œè§„çº¦å†…å±‚å¾ªç¯ç‰ˆæœ¬çš„çŸ©é˜µä¹˜æ³•
+    // ²¢ĞĞ¹æÔ¼ÄÚ²ãÑ­»·°æ±¾µÄ¾ØÕó³Ë·¨
     static Matrix multiply_parallel_1(const Matrix& A, const Matrix& B) {
         int n = A.getSize();
         Matrix C(n);
@@ -72,7 +72,7 @@ public:
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
                 double sum = 0.0;
-                #pragma omp parallel for reduction(+:sum) // å¯¹ k å¹¶è¡Œå½’çº¦
+                #pragma omp parallel for reduction(+:sum) // ¶Ô k ²¢ĞĞ¹éÔ¼
                 for (int k = 0; k < n; k++) {
                     sum += A(i, k) * B(k, j);
                 }
@@ -82,13 +82,13 @@ public:
         return C;
     }
 
-    // å¹¶è¡Œç‰ˆæœ¬çš„çŸ©é˜µä¹˜æ³•+å†…å­˜è®¿é—®è¿ç»­æ€§
+    // ²¢ĞĞ°æ±¾µÄ¾ØÕó³Ë·¨+ÄÚ´æ·ÃÎÊÁ¬ĞøĞÔ
     static Matrix multiply_parallel_2(const Matrix& A, const Matrix& B) {
         int n = A.getSize();
         Matrix C(n);
         Matrix B_T(n);
 
-        // è½¬ç½®çŸ©é˜µBä»¥æé«˜å†…å­˜è®¿é—®æ•ˆç‡
+        // ×ªÖÃ¾ØÕóBÒÔÌá¸ßÄÚ´æ·ÃÎÊĞ§ÂÊ
         #pragma omp parallel for collapse(2)
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
@@ -96,7 +96,7 @@ public:
             }
         }
 
-        // ä½¿ç”¨è½¬ç½®åçš„çŸ©é˜µè¿›è¡Œè®¡ç®—
+        // Ê¹ÓÃ×ªÖÃºóµÄ¾ØÕó½øĞĞ¼ÆËã
         #pragma omp parallel for collapse(2)
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
@@ -110,13 +110,13 @@ public:
         return C;
     }
 
-    // å¹¶è¡Œç‰ˆæœ¬çš„çŸ©é˜µä¹˜æ³•+å†…å­˜è®¿é—®è¿ç»­æ€§+SIMD
+    // ²¢ĞĞ°æ±¾µÄ¾ØÕó³Ë·¨+ÄÚ´æ·ÃÎÊÁ¬ĞøĞÔ+SIMD
     static Matrix multiply_parallel_3(const Matrix& A, const Matrix& B) {
         int n = A.getSize();
         Matrix C(n);
         Matrix B_T(n);
 
-        // è½¬ç½®çŸ©é˜µB
+        // ×ªÖÃ¾ØÕóB
         #pragma omp parallel for collapse(2)
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
@@ -124,7 +124,7 @@ public:
             }
         }
 
-        // ä½¿ç”¨SIMDå’ŒOpenMPç»“åˆçš„ä¼˜åŒ–ç‰ˆæœ¬
+        // Ê¹ÓÃSIMDºÍOpenMP½áºÏµÄÓÅ»¯°æ±¾
         #pragma omp parallel for collapse(2)
         for (int i = 0; i < n; i++) {
             for (int j = 0; j < n; j++) {
@@ -139,7 +139,7 @@ public:
         return C;
     }
 
-    // æ·»åŠ æ¯”è¾ƒå‡½æ•°
+    // Ìí¼Ó±È½Ïº¯Êı
     bool isEqual(const Matrix& other, double tolerance = 1e-10) const {
         if (size != other.size) return false;
         
@@ -147,9 +147,9 @@ public:
             for (int j = 0; j < size; j++) {
                 double diff = std::abs((*this)(i,j) - other(i,j));
                 if (diff > tolerance) {
-                    std::cout << "ä¸åŒ¹é…åœ¨ä½ç½® (" << i << "," << j << "): " 
+                    std::cout << "²»Æ¥ÅäÔÚÎ»ÖÃ (" << i << "," << j << "): " 
                               << (*this)(i,j) << " != " << other(i,j) 
-                              << " (å·®å¼‚: " << diff << ")" << std::endl;
+                              << " (²îÒì: " << diff << ")" << std::endl;
                     return false;
                 }
             }
@@ -157,7 +157,7 @@ public:
         return true;
     }
 
-    // æ·»åŠ æ‰“å°éƒ¨åˆ†çŸ©é˜µçš„å‡½æ•°ï¼ˆç”¨äºè°ƒè¯•ï¼‰
+    // Ìí¼Ó´òÓ¡²¿·Ö¾ØÕóµÄº¯Êı£¨ÓÃÓÚµ÷ÊÔ£©
     void printSubMatrix(int start_i, int start_j, int size_to_print) const {
         int end_i = std::min(start_i + size_to_print, size);
         int end_j = std::min(start_j + size_to_print, size);
@@ -172,119 +172,119 @@ public:
 };
 
 int main() {
-    int n = 2000; // çŸ©é˜µå¤§å°
+    int n = 2000; // ¾ØÕó´óĞ¡
     int num_threads = 6;
-    // åˆ›å»ºå¹¶åˆå§‹åŒ–çŸ©é˜µ
+    // ´´½¨²¢³õÊ¼»¯¾ØÕó
     Matrix A(n);
     Matrix B(n);
     
     A.randomInit();
     B.randomInit();
     
-    // è®¾ç½®OpenMPçº¿ç¨‹æ•°
+    // ÉèÖÃOpenMPÏß³ÌÊı
     omp_set_num_threads(num_threads);
     
-    std::cout << "å¼€å§‹çŸ©é˜µä¹˜æ³•è®¡ç®— (çŸ©é˜µå¤§å°: " << n << "x" << n << ", çº¿ç¨‹æ•°: " << num_threads << ")" << std::endl;
+    std::cout << "¿ªÊ¼¾ØÕó³Ë·¨¼ÆËã (¾ØÕó´óĞ¡: " << n << "x" << n << ", Ïß³ÌÊı: " << num_threads << ")" << std::endl;
     
-    // ä¸²è¡Œè®¡ç®—
+    // ´®ĞĞ¼ÆËã
     double serial_start = omp_get_wtime();
     Matrix C_serial = Matrix::multiply_serial(A, B);
     double serial_end = omp_get_wtime();
     double serial_time = serial_end - serial_start;
     
-    // åŸºç¡€å¹¶è¡Œç‰ˆæœ¬
+    // »ù´¡²¢ĞĞ°æ±¾
     double parallel_start = omp_get_wtime();
     Matrix C_parallel = Matrix::multiply_parallel(A, B);
     double parallel_end = omp_get_wtime();
     double parallel_time = parallel_end - parallel_start;
 
-    // å¹¶è¡Œè§„çº¦å†…å±‚å¾ªç¯ç‰ˆæœ¬çš„çŸ©é˜µä¹˜æ³•
+    // ²¢ĞĞ¹æÔ¼ÄÚ²ãÑ­»·°æ±¾µÄ¾ØÕó³Ë·¨
     double parallel1_start = omp_get_wtime();
     Matrix C_parallel1 = Matrix::multiply_parallel_1(A, B);
     double parallel1_end = omp_get_wtime();
     double parallel1_time = parallel1_end - parallel1_start;
     
-    // å†…å­˜è®¿é—®è¿ç»­æ€§ç‰ˆæœ¬
+    // ÄÚ´æ·ÃÎÊÁ¬ĞøĞÔ°æ±¾
     double parallel2_start = omp_get_wtime();
     Matrix C_parallel2 = Matrix::multiply_parallel_2(A, B);
     double parallel2_end = omp_get_wtime();
     double parallel2_time = parallel2_end - parallel2_start;
 
-    // å†…å­˜è®¿é—®ä¼˜åŒ–+SIMDç‰ˆæœ¬
+    // ÄÚ´æ·ÃÎÊÓÅ»¯+SIMD°æ±¾
     double parallel3_start = omp_get_wtime();
     Matrix C_parallel3 = Matrix::multiply_parallel_3(A, B);
     double parallel3_end = omp_get_wtime();
     double parallel3_time = parallel3_end - parallel3_start;
     
-    // è¾“å‡ºæ€§èƒ½ç»“æœ
-    std::cout << "\næ€§èƒ½ç»“æœ:" << std::endl;
-    std::cout << "çŸ©é˜µå¤§å°: " << n << " x " << n << std::endl;
-    std::cout << "\nä¸²è¡Œè®¡ç®—æ—¶é—´: " << serial_time << " ç§’" << std::endl;
+    // Êä³öĞÔÄÜ½á¹û
+    std::cout << "\nĞÔÄÜ½á¹û:" << std::endl;
+    std::cout << "¾ØÕó´óĞ¡: " << n << " x " << n << std::endl;
+    std::cout << "\n´®ĞĞ¼ÆËãÊ±¼ä: " << serial_time << " Ãë" << std::endl;
     
-    std::cout << "\nåŸºç¡€å¹¶è¡Œç‰ˆæœ¬:" << std::endl;
-    std::cout << "è®¡ç®—æ—¶é—´: " << parallel_time << " ç§’" << std::endl;
-    std::cout << "åŠ é€Ÿæ¯”: " << serial_time / parallel_time << "x" << std::endl;
-    std::cout << "å¹¶è¡Œæ•ˆç‡: " << (serial_time / parallel_time / num_threads) * 100 << "%" << std::endl;
+    std::cout << "\n»ù´¡²¢ĞĞ°æ±¾:" << std::endl;
+    std::cout << "¼ÆËãÊ±¼ä: " << parallel_time << " Ãë" << std::endl;
+    std::cout << "¼ÓËÙ±È: " << serial_time / parallel_time << "x" << std::endl;
+    std::cout << "²¢ĞĞĞ§ÂÊ: " << (serial_time / parallel_time / num_threads) * 100 << "%" << std::endl;
 
-    std::cout << "\nå¹¶è¡Œè§„çº¦å†…å±‚å¾ªç¯ç‰ˆæœ¬:" << std::endl;
-    std::cout << "è®¡ç®—æ—¶é—´: " << parallel1_time << " ç§’" << std::endl;
-    std::cout << "åŠ é€Ÿæ¯”: " << serial_time / parallel1_time << "x" << std::endl;
-    std::cout << "å¹¶è¡Œæ•ˆç‡: " << (serial_time / parallel1_time / num_threads) * 100 << "%" << std::endl;
+    std::cout << "\n²¢ĞĞ¹æÔ¼ÄÚ²ãÑ­»·°æ±¾:" << std::endl;
+    std::cout << "¼ÆËãÊ±¼ä: " << parallel1_time << " Ãë" << std::endl;
+    std::cout << "¼ÓËÙ±È: " << serial_time / parallel1_time << "x" << std::endl;
+    std::cout << "²¢ĞĞĞ§ÂÊ: " << (serial_time / parallel1_time / num_threads) * 100 << "%" << std::endl;
 
-    std::cout << "\nå†…å­˜è®¿é—®è¿ç»­æ€§ç‰ˆæœ¬:" << std::endl;
-    std::cout << "è®¡ç®—æ—¶é—´: " << parallel2_time << " ç§’" << std::endl;
-    std::cout << "åŠ é€Ÿæ¯”: " << serial_time / parallel2_time << "x" << std::endl;
-    std::cout << "å¹¶è¡Œæ•ˆç‡: " << (serial_time / parallel2_time / num_threads) * 100 << "%" << std::endl;
+    std::cout << "\nÄÚ´æ·ÃÎÊÁ¬ĞøĞÔ°æ±¾:" << std::endl;
+    std::cout << "¼ÆËãÊ±¼ä: " << parallel2_time << " Ãë" << std::endl;
+    std::cout << "¼ÓËÙ±È: " << serial_time / parallel2_time << "x" << std::endl;
+    std::cout << "²¢ĞĞĞ§ÂÊ: " << (serial_time / parallel2_time / num_threads) * 100 << "%" << std::endl;
     
-    std::cout << "\nå†…å­˜è®¿é—®ä¼˜åŒ–+SIMDç‰ˆæœ¬:" << std::endl;
-    std::cout << "è®¡ç®—æ—¶é—´: " << parallel3_time << " ç§’" << std::endl;
-    std::cout << "åŠ é€Ÿæ¯”: " << serial_time / parallel3_time << "x" << std::endl;
-    std::cout << "å¹¶è¡Œæ•ˆç‡: " << (serial_time / parallel3_time / num_threads) * 100 << "%" << std::endl;
+    std::cout << "\nÄÚ´æ·ÃÎÊÓÅ»¯+SIMD°æ±¾:" << std::endl;
+    std::cout << "¼ÆËãÊ±¼ä: " << parallel3_time << " Ãë" << std::endl;
+    std::cout << "¼ÓËÙ±È: " << serial_time / parallel3_time << "x" << std::endl;
+    std::cout << "²¢ĞĞĞ§ÂÊ: " << (serial_time / parallel3_time / num_threads) * 100 << "%" << std::endl;
 
-    // éªŒè¯ç»“æœæ­£ç¡®æ€§
-    std::cout << "\néªŒè¯è®¡ç®—ç»“æœæ­£ç¡®æ€§:" << std::endl;
+    // ÑéÖ¤½á¹ûÕıÈ·ĞÔ
+    std::cout << "\nÑéÖ¤¼ÆËã½á¹ûÕıÈ·ĞÔ:" << std::endl;
     
-    std::cout << "åŸºç¡€å¹¶è¡Œç‰ˆæœ¬: ";
+    std::cout << "»ù´¡²¢ĞĞ°æ±¾: ";
     if (C_serial.isEqual(C_parallel)) {
-        std::cout << "æ­£ç¡®" << std::endl;
+        std::cout << "ÕıÈ·" << std::endl;
     } else {
-        std::cout << "ç»“æœä¸åŒ¹é…ï¼" << std::endl;
-        std::cout << "ä¸²è¡Œç»“æœç¤ºä¾‹ (å·¦ä¸Šè§’4x4):" << std::endl;
+        std::cout << "½á¹û²»Æ¥Åä£¡" << std::endl;
+        std::cout << "´®ĞĞ½á¹ûÊ¾Àı (×óÉÏ½Ç4x4):" << std::endl;
         C_serial.printSubMatrix(0, 0, 4);
-        std::cout << "å¹¶è¡Œç»“æœç¤ºä¾‹ (å·¦ä¸Šè§’4x4):" << std::endl;
+        std::cout << "²¢ĞĞ½á¹ûÊ¾Àı (×óÉÏ½Ç4x4):" << std::endl;
         C_parallel.printSubMatrix(0, 0, 4);
     }
     
-    std::cout << "å¹¶è¡Œè§„çº¦å†…å±‚å¾ªç¯ç‰ˆæœ¬: ";
+    std::cout << "²¢ĞĞ¹æÔ¼ÄÚ²ãÑ­»·°æ±¾: ";
     if (C_serial.isEqual(C_parallel1)) {
-        std::cout << "æ­£ç¡®" << std::endl;
+        std::cout << "ÕıÈ·" << std::endl;
     } else {
-        std::cout << "ç»“æœä¸åŒ¹é…ï¼" << std::endl;
-        std::cout << "ä¸²è¡Œç»“æœç¤ºä¾‹ (å·¦ä¸Šè§’4x4):" << std::endl;
+        std::cout << "½á¹û²»Æ¥Åä£¡" << std::endl;
+        std::cout << "´®ĞĞ½á¹ûÊ¾Àı (×óÉÏ½Ç4x4):" << std::endl;
         C_serial.printSubMatrix(0, 0, 4);
-        std::cout << "å¹¶è¡Œç»“æœç¤ºä¾‹ (å·¦ä¸Šè§’4x4):" << std::endl;
+        std::cout << "²¢ĞĞ½á¹ûÊ¾Àı (×óÉÏ½Ç4x4):" << std::endl;
         C_parallel1.printSubMatrix(0, 0, 4);
     }
     
-    std::cout << "å†…å­˜è®¿é—®è¿ç»­æ€§ç‰ˆæœ¬: ";
+    std::cout << "ÄÚ´æ·ÃÎÊÁ¬ĞøĞÔ°æ±¾: ";
     if (C_serial.isEqual(C_parallel2)) {
-        std::cout << "æ­£ç¡®" << std::endl;
+        std::cout << "ÕıÈ·" << std::endl;
     } else {
-        std::cout << "ç»“æœä¸åŒ¹é…ï¼" << std::endl;
-        std::cout << "ä¸²è¡Œç»“æœç¤ºä¾‹ (å·¦ä¸Šè§’4x4):" << std::endl;
+        std::cout << "½á¹û²»Æ¥Åä£¡" << std::endl;
+        std::cout << "´®ĞĞ½á¹ûÊ¾Àı (×óÉÏ½Ç4x4):" << std::endl;
         C_serial.printSubMatrix(0, 0, 4);
-        std::cout << "å¹¶è¡Œç»“æœç¤ºä¾‹ (å·¦ä¸Šè§’4x4):" << std::endl;
+        std::cout << "²¢ĞĞ½á¹ûÊ¾Àı (×óÉÏ½Ç4x4):" << std::endl;
         C_parallel2.printSubMatrix(0, 0, 4);
     }
     
-    std::cout << "å†…å­˜è®¿é—®ä¼˜åŒ–+SIMDç‰ˆæœ¬: ";
+    std::cout << "ÄÚ´æ·ÃÎÊÓÅ»¯+SIMD°æ±¾: ";
     if (C_serial.isEqual(C_parallel3)) {
-        std::cout << "æ­£ç¡®" << std::endl;
+        std::cout << "ÕıÈ·" << std::endl;
     } else {
-        std::cout << "ç»“æœä¸åŒ¹é…ï¼" << std::endl;
-        std::cout << "ä¸²è¡Œç»“æœç¤ºä¾‹ (å·¦ä¸Šè§’4x4):" << std::endl;
+        std::cout << "½á¹û²»Æ¥Åä£¡" << std::endl;
+        std::cout << "´®ĞĞ½á¹ûÊ¾Àı (×óÉÏ½Ç4x4):" << std::endl;
         C_serial.printSubMatrix(0, 0, 4);
-        std::cout << "å¹¶è¡Œç»“æœç¤ºä¾‹ (å·¦ä¸Šè§’4x4):" << std::endl;
+        std::cout << "²¢ĞĞ½á¹ûÊ¾Àı (×óÉÏ½Ç4x4):" << std::endl;
         C_parallel3.printSubMatrix(0, 0, 4);
     }
     
